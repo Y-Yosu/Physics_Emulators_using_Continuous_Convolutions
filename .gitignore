@@ -2,8 +2,9 @@
 datasets/SFBC/*
 datasets/lagrangebench/*
 SFBC/datasets/*
+!datasets/SFBC/.gitkeep
+!datasets/lagrangebench/.gitkeep
 !SFBC/datasets/.gitkeep
-
 # Python
 __pycache__/
 *.py[cod]
@@ -59,3 +60,17 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp 
+
+# LagrangeBench specific
+lagrangebench/ckp/
+lagrangebench/rollout/
+lagrangebench/rollouts/
+lagrangebench/wandb/
+lagrangebench/*.out
+lagrangebench/datasets/
+lagrangebench/baselines/
+lagrangebench/partition_*
+lagrangebench/.ruff-cache/
+lagrangebench/profile/
+lagrangebench/.coverage
+lagrangebench/docs/_build/ 
