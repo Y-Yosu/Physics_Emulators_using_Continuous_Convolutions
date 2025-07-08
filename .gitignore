@@ -1,4 +1,6 @@
 # Datasets folder - exclude contents but keep structure
+datasets/SFBC/*
+datasets/lagrangebench/*
 SFBC/datasets/*
 !SFBC/datasets/.gitkeep
 
