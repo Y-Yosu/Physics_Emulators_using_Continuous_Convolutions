@@ -5,7 +5,7 @@ from pathlib import Path
 from datetime import datetime
 
 LAGRANGEBENCH_TGV_PATH = "../../lagrangebench/2D_TGV_2500_10kevery100"
-OUTPUT_BASE_PATH = "../../SFBC/TGV_SFBC_dataset/dataset"
+OUTPUT_BASE_PATH = "../../SFBC/lagrangebench_dataset_TGV/dataset"
 CONVERTER_SCRIPT = "lagrangebench_tgv_to_sfbc_converter.py"
 METADATA_PATH = os.path.join(LAGRANGEBENCH_TGV_PATH, "metadata.json")
 

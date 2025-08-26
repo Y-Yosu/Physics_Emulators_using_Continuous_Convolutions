@@ -657,7 +657,7 @@ def toPandaDict(hyperParameterDict):
         'maxUnroll': hyperParameterDict['maxUnroll'],
         'historyLength': hyperParameterDict['historyLength'],
 
-        'cutlassBatchSize': hyperParameterDict['cutlassBatchSize'],
+        'cutlassBatchSize': hyperParameterDict['convLayer']['cutlassBatchSize'],
         'li' : hyperParameterDict['liLoss'] if 'liLoss' in hyperParameterDict else None,
 
         # 'normalized': hyperParameterDict['normalized'],
@@ -765,31 +765,31 @@ def finalizeHyperParameters(hyperParameterDict, dataset):
     hyperParameterDict['groundTruthCount'] = groundTruthCount
     hyperParameterDict['dimension'] = currentState['fluid']['positions'].shape[1]
 
-    # hyperParameterDict['rbfs'] = hyperParameterDict['convLayer']['basisFunction'].split(' ') if isinstance(hyperParameterDict['basisFunctions'], str) else hyperParameterDict['basisFunctions']
-    # if len(hyperParameterDict['rbfs']) == 1:
-    #     hyperParameterDict['rbfs'] = hyperParameterDict['rbfs'] * hyperParameterDict['dimension']
-    # elif len(hyperParameterDict['rbfs']) != hyperParameterDict['dimension']:
-    #     raise ValueError('Number of basis functions must match the dimensionality of the problem or be 1')
+    hyperParameterDict['rbfs'] = hyperParameterDict['convLayer']['basisFunction'].split(' ') if isinstance(hyperParameterDict['convLayer']['basisFunction'], str) else hyperParameterDict['convLayer']['basisFunction']
+    if len(hyperParameterDict['rbfs']) == 1:
+        hyperParameterDict['rbfs'] = hyperParameterDict['rbfs'] * hyperParameterDict['dimension']
+    elif len(hyperParameterDict['rbfs']) != hyperParameterDict['dimension']:
+        raise ValueError('Number of basis functions must match the dimensionality of the problem or be 1')
     
-    # hyperParameterDict['rbfs'] = [s.replace('_', ' ') for s in hyperParameterDict['rbfs']]
+    hyperParameterDict['rbfs'] = [s.replace('_', ' ') for s in hyperParameterDict['rbfs']]
 
-    # hyperParameterDict['dims'] = hyperParameterDict['basisTerms'].split(' ') if isinstance(hyperParameterDict['basisTerms'], str) else (hyperParameterDict['basisTerms'] if isinstance(hyperParameterDict['basisTerms'], list) else [hyperParameterDict['basisTerms']])
-    # if len(hyperParameterDict['dims']) == 1:
-    #     hyperParameterDict['dims'] = hyperParameterDict['dims'] * hyperParameterDict['dimension']
-    # elif len(hyperParameterDict['dims']) != hyperParameterDict['dimension']:
-    #     raise ValueError('Number of basis terms must match the dimensionality of the problem or be 1')
+    hyperParameterDict['dims'] = hyperParameterDict['convLayer']['basisTerms'].split(' ') if isinstance(hyperParameterDict['convLayer']['basisTerms'], str) else (hyperParameterDict['convLayer']['basisTerms'] if isinstance(hyperParameterDict['convLayer']['basisTerms'], list) else [hyperParameterDict['convLayer']['basisTerms']])
+    if len(hyperParameterDict['dims']) == 1:
+        hyperParameterDict['dims'] = hyperParameterDict['dims'] * hyperParameterDict['dimension']
+    elif len(hyperParameterDict['dims']) != hyperParameterDict['dimension']:
+        raise ValueError('Number of basis terms must match the dimensionality of the problem or be 1')
 
-    # hyperParameterDict['dims'] = [int(d) for d in hyperParameterDict['dims']]
+    hyperParameterDict['dims'] = [int(d) for d in hyperParameterDict['dims']]
 
-    # if hyperParameterDict['dimension'] >= 1:
-    #     hyperParameterDict['n'] = hyperParameterDict['dims'][0]
-    #     hyperParameterDict['rbf_x'] = hyperParameterDict['rbfs'][0]
-    # if hyperParameterDict['dimension'] >= 2:    
-    #     hyperParameterDict['m'] = hyperParameterDict['dims'][1]
-    #     hyperParameterDict['rbf_y'] = hyperParameterDict['rbfs'][1]
-    # if hyperParameterDict['dimension'] >= 3:
-    #     hyperParameterDict['l'] = hyperParameterDict['dims'][2]
-    #     hyperParameterDict['rbf_z'] = hyperParameterDict['rbfs'][2]
+    if hyperParameterDict['dimension'] >= 1:
+        hyperParameterDict['n'] = hyperParameterDict['dims'][0]
+        hyperParameterDict['rbf_x'] = hyperParameterDict['rbfs'][0]
+    if hyperParameterDict['dimension'] >= 2:    
+        hyperParameterDict['m'] = hyperParameterDict['dims'][1]
+        hyperParameterDict['rbf_y'] = hyperParameterDict['rbfs'][1]
+    if hyperParameterDict['dimension'] >= 3:
+        hyperParameterDict['l'] = hyperParameterDict['dims'][2]
+        hyperParameterDict['rbf_z'] = hyperParameterDict['rbfs'][2]
 
 
     hyperParameterDict['arch'] =  hyperParameterDict['arch'] + ' ' + str(groundTruthCount)
@@ -828,7 +828,7 @@ def finalizeHyperParameters(hyperParameterDict, dataset):
     mlpText = f'[{"V" if hyperParameterDict["vertexMLPActive"] else " "}{"E" if hyperParameterDict["edgeMLPActive"] else " "}{"F" if hyperParameterDict["fcLayerMLPActive"] else " "}]'
     
 
-    layers = [int(a) for a in hyperParameterDict['arch'].split(' ')]
+    layers = hyperParameterDict['layers']
     layerString = ''
     i = 0
     while i < len(layers):

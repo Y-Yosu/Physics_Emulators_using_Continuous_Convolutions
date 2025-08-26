@@ -43,6 +43,7 @@ def load_metadata(metadata_path: str) -> Dict:
         'dx': dx,
         'viscosity': viscosity,
         'support_radius': metadata.get('default_connectivity_radius', 0.029),
+        'target_neighbors': 20,  # Default value, could be computed from support/dx ratio
         'domain_bounds': metadata.get('bounds', [[0.0, 1.0], [0.0, 1.0]]),
         'periodic_bc': metadata.get('periodic_boundary_conditions', [True, True]),
         't_end': metadata.get('t_end', 5.0),
@@ -53,7 +54,12 @@ def load_metadata(metadata_path: str) -> Dict:
         'solver': metadata.get('solver', 'SPH'),
         'dim': metadata.get('dim', 2),
         'sequence_length': metadata.get('sequence_length_train', 126),
-        'num_particles': metadata.get('num_particles_max', 2500)
+        'num_particles': metadata.get('num_particles_max', 2500),
+        # Additional useful parameters from LagrangeBench
+        'free_slip': metadata.get('free_slip', False),
+        'artificial_alpha': metadata.get('artificial_alpha', 0.0),
+        'vel_mean': metadata.get('vel_mean', [0.0, 0.0]),
+        'vel_std': metadata.get('vel_std', [0.01, 0.01])
     }
     
     print(f"  LOADED METADATA:")
@@ -278,40 +284,32 @@ class TGVSFBCConverter:
         print(f"  viscosity: {self.physics['viscosity']}")
         print(f"  domain: {self.physics['domain_bounds']}")
         
-        # Step 1: Compute velocities and accelerations with correct dt
+        # Step 1: Compute velocities with correct dt
         dt = self.physics['dt']
         velocities = self.compute_velocities(positions, dt)
-        accelerations = self.compute_accelerations(velocities, dt)
         
-        # Step 2: Compute SPH properties (optimized approach)
-        print("\n🔬 COMPUTING SPH PROPERTIES:")
+        # Step 2: Compute SPH density (optimized approach, matching SFBC_TGV needs)
+        print("\n🔬 COMPUTING SPH DENSITY:")
         
         densities = np.zeros((timesteps, particles))
-        pressures = np.zeros((timesteps, particles))
         
         # Compute for first 50 timesteps (captures dynamics)
         compute_limit = min(timesteps, 50)
-        print(f"  Computing SPH for first {compute_limit} timesteps")
+        print(f"  Computing density for first {compute_limit} timesteps")
         for t in range(compute_limit):
             if t % 10 == 0:
                 print(f"    Processing timestep {t+1}/{compute_limit}")
             densities[t] = self.compute_density_sph(positions[t])
-            pressures[t] = self.compute_pressure(densities[t])
         
         # Copy for remaining timesteps (maintains structure)
         if timesteps > compute_limit:
-            print(f"  Copying SPH properties to remaining {timesteps - compute_limit} timesteps")
+            print(f"  Copying density to remaining {timesteps - compute_limit} timesteps")
             for t in range(compute_limit, timesteps):
                 densities[t] = densities[compute_limit-1]
-                pressures[t] = pressures[compute_limit-1]
         
         print(f"  Final density range: [{densities.min():.3f}, {densities.max():.3f}]")
-        print(f"  Final pressure range: [{pressures.min():.3f}, {pressures.max():.3f}]")
         
-        # Step 3: Compute density time derivatives
-        dpdt = self.compute_dpdt(densities, dt)
-        
-        # Step 4: Particle classification (TGV is pure fluid)
+        # Step 3: Particle classification (TGV is pure fluid)
         fluid_mask = particle_types == 0
         boundary_mask = ~fluid_mask
         
@@ -319,17 +317,14 @@ class TGVSFBCConverter:
         print(f"  Fluid particles: {np.sum(fluid_mask)}")
         print(f"  Boundary particles: {np.sum(boundary_mask)}")
         
-        # Step 5: Create SFBC data structure
+        # Step 4: Create SFBC data structure (matching SFBC_TGV format)
         sfbc_data = {
             'timesteps': timesteps,
             'fluid_particles': np.sum(fluid_mask),
             'boundary_particles': np.sum(boundary_mask),
             'positions': positions,
             'velocities': velocities,
-            'accelerations': accelerations,
             'densities': densities,
-            'pressures': pressures,
-            'dpdt': dpdt,
             'fluid_mask': fluid_mask,
             'boundary_mask': boundary_mask,
             'particle_types': particle_types,
@@ -346,7 +341,7 @@ class TGVSFBCConverter:
         print(f"  Output: {output_path}")
         
         with h5py.File(output_path, 'w') as f:
-            # Add SFBC file-level attributes
+            # Add SFBC file-level attributes (compatibility)
             physics = sfbc_data['physics']
             
             f.attrs['targetNeighbors'] = 20
@@ -354,41 +349,87 @@ class TGVSFBCConverter:
             f.attrs['radius'] = physics['dx'] / 2.0  # Particle radius from spacing
             f.attrs['c0'] = self.c0
             f.attrs['EOSgamma'] = 7.0
-            f.attrs['alphaDiffusion'] = 0.01
-            f.attrs['boundaryPressureTerm'] = 'PBSPH'
-            f.attrs['boundaryScheme'] = 'solid'
+            f.attrs['area'] = physics['dx'] * physics['dx']  # Particle area
+            f.attrs['support'] = physics['support_radius']
             f.attrs['defaultKernel'] = 'wendland2'
-            f.attrs['deltaDiffusion'] = 0.1
-            f.attrs['densityDiffusionScheme'] = 'MOG'
-            f.attrs['densityScheme'] = 'continuum'
-            f.attrs['device'] = 'cuda'
-            f.attrs['fixedDt'] = True
-            f.attrs['floatprecision'] = 'single'
-            f.attrs['fluidGravity'] = np.array([0, -physics['gravity']])
-            f.attrs['fluidPressureTerm'] = 'TaitEOS'
-            f.attrs['integrationScheme'] = 'RK4'
-            f.attrs['kinematicDiffusion'] = physics['viscosity']
-            f.attrs['shiftingEnabled'] = False
-            f.attrs['shiftingScheme'] = 'deltaPlus'
-            f.attrs['simulationScheme'] = 'deltaSPH'
-            f.attrs['staticBoundary'] = True
-            f.attrs['velocityDiffusionScheme'] = 'deltaSPH'
             
-            # Actual physics parameters from metadata
-            f.attrs['initialDt'] = physics['dt']
-            f.attrs['dtSimulation'] = physics['dt_simulation']
-            f.attrs['writeEvery'] = physics['write_every']
-            f.attrs['spacing'] = physics['dx']
-            f.attrs['packing'] = physics['dx']
-            f.attrs['supportRadius'] = physics['support_radius']
-            f.attrs['domainBounds'] = np.array(physics['domain_bounds'])
-            f.attrs['periodicBC'] = physics['periodic_bc']
-            f.attrs['finalTime'] = physics['t_end']
-            f.attrs['viscosity'] = physics['viscosity']
-            f.attrs['reynoldsNumber'] = physics['reynolds']
-            f.attrs['case'] = physics['case']
-            f.attrs['solver'] = physics['solver']
-            f.attrs['dimensions'] = physics['dim']
+            # Create SFBC-style config group structure (MAIN FIX!)
+            config_group = f.create_group('config')
+            
+            # Domain configuration (matches SFBC_TGV structure)
+            domain_group = config_group.create_group('domain')
+            domain_group.attrs['dim'] = physics['dim']
+            domain_group.attrs['minExtent'] = np.array([bound[0] for bound in physics['domain_bounds']], dtype=np.float32)
+            domain_group.attrs['maxExtent'] = np.array([bound[1] for bound in physics['domain_bounds']], dtype=np.float32)
+            domain_group.attrs['periodicity'] = np.array(physics['periodic_bc'][:physics['dim']], dtype=bool)
+            domain_group.attrs['periodic'] = any(physics['periodic_bc'][:physics['dim']])
+            domain_group.attrs['adjustDomain'] = False
+            domain_group.attrs['adjustParticle'] = False
+            
+            # Kernel configuration (critical for SPH computations)
+            kernel_group = config_group.create_group('kernel')
+            kernel_group.attrs['name'] = 'Wendland2'  # Case-sensitive! Must match SFBC
+            kernel_group.attrs['targetNeighbors'] = physics.get('target_neighbors', 20)
+            # CRITICAL: kernelScale = support / (2 * dx) as used by SFBC
+            kernel_group.attrs['kernelScale'] = physics['support_radius'] / (2.0 * physics['dx'])
+            
+            # Particle configuration (critical for mass/volume calculations)
+            particle_group = config_group.create_group('particle')
+            particle_group.attrs['support'] = physics['support_radius']
+            particle_group.attrs['dx'] = physics['dx']  # CRITICAL for kernel scaling
+            particle_group.attrs['volume'] = physics['dx'] * physics['dx']
+            particle_group.attrs['area'] = physics['dx'] * physics['dx']  # 2D particle area
+            
+            # Fluid properties (used in features and SPH operations)
+            fluid_group = config_group.create_group('fluid')
+            fluid_group.attrs['rho0'] = self.rho0  # Reference density for constant:rho0
+            fluid_group.attrs['cs'] = self.c0     # Speed of sound for constant:cs  
+            fluid_group.attrs['viscosity'] = physics['viscosity']  # From LagrangeBench metadata
+            
+            # Timestep configuration
+            timestep_group = config_group.create_group('timestep')
+            timestep_group.attrs['dt'] = physics['dt']
+            timestep_group.attrs['dtSimulation'] = physics['dt_simulation']  
+            timestep_group.attrs['writeEvery'] = physics['write_every']
+            
+            # Boundary configuration
+            boundary_group = config_group.create_group('boundary')
+            boundary_group.attrs['active'] = False
+            
+            # Neighborhood configuration  
+            neighborhood_group = config_group.create_group('neighborhood')
+            neighborhood_group.attrs['scheme'] = 'compact'
+            neighborhood_group.attrs['verletScale'] = 1.5
+            
+            # Compute configuration
+            compute_group = config_group.create_group('compute')
+            compute_group.attrs['device'] = 'cuda'
+            compute_group.attrs['dtype'] = 'float32'
+            
+            print(f"✅ Created SFBC-style config structure with domain: {physics['domain_bounds']}, periodic: {physics['periodic_bc'][:physics['dim']]}")
+            
+            # Create metadata group (comprehensive LagrangeBench metadata)
+            metadata_group = f.create_group('metadata')
+            metadata_group.attrs['case'] = physics['case']
+            metadata_group.attrs['solver'] = physics['solver']
+            metadata_group.attrs['reynolds'] = physics['reynolds']
+            metadata_group.attrs['finalTime'] = physics['t_end']
+            metadata_group.attrs['originalDt'] = physics['dt_simulation']  # Original simulation dt
+            metadata_group.attrs['writeEvery'] = physics['write_every']    # Temporal downsampling
+            metadata_group.attrs['sequenceLength'] = physics['sequence_length']
+            metadata_group.attrs['maxParticles'] = physics['num_particles']
+            
+            # Store original LagrangeBench bounds for reference
+            metadata_group.attrs['originalBounds'] = np.array(physics['domain_bounds'])
+            metadata_group.attrs['originalPeriodicBC'] = np.array(physics['periodic_bc'])
+            
+            print(f"✅ Added comprehensive metadata from LagrangeBench:")
+            print(f"    - dt (effective): {physics['dt']}")
+            print(f"    - dx (particle spacing): {physics['dx']}")  
+            print(f"    - support radius: {physics['support_radius']}")
+            print(f"    - kernelScale: {physics['support_radius'] / (2.0 * physics['dx']):.6f}")
+            print(f"    - viscosity: {physics['viscosity']}")
+            print(f"    - Reynolds: {physics['reynolds']:.1f}")
             
             # Create simulationExport group
             sim_export = f.create_group('simulationExport')
@@ -405,55 +446,38 @@ class TGVSFBCConverter:
                 timestep_group.attrs['time'] = t * physics['dt']
                 timestep_group.attrs['timestep'] = t
                 
-                # Extract fluid data only
+                # Extract fluid data only (matching SFBC_TGV format)
                 fluid_positions = sfbc_data['positions'][t][sfbc_data['fluid_mask']]
                 fluid_velocities = sfbc_data['velocities'][t][sfbc_data['fluid_mask']]
-                fluid_accelerations = sfbc_data['accelerations'][t][sfbc_data['fluid_mask']]
                 fluid_densities = sfbc_data['densities'][t][sfbc_data['fluid_mask']]
-                fluid_pressures = sfbc_data['pressures'][t][sfbc_data['fluid_mask']]
-                fluid_dpdt = sfbc_data['dpdt'][t][sfbc_data['fluid_mask']]
                 n_fluid_particles = sfbc_data['fluid_particles']
                 
-                # SFBC required datasets
+                # SFBC datasets (match SFBC_TGV format exactly)
                 timestep_group.create_dataset('UID', 
                                             data=np.arange(n_fluid_particles).astype(np.int64))
                 
-                timestep_group.create_dataset('fluidPosition', 
-                                            data=fluid_positions.astype(np.float32))
-                
-                timestep_group.create_dataset('fluidVelocity', 
-                                            data=fluid_velocities.astype(np.float32))
-                
-                timestep_group.create_dataset('finalPosition', 
-                                            data=fluid_positions.astype(np.float32))
-                
-                timestep_group.create_dataset('finalVelocity', 
-                                            data=fluid_velocities.astype(np.float32))
-                
-                timestep_group.create_dataset('fluidAcceleration', 
-                                            data=fluid_accelerations.astype(np.float32))
+                timestep_group.create_dataset('fluidArea', 
+                                            data=np.full(n_fluid_particles, 
+                                                       physics['dx'] * physics['dx'], dtype=np.float32))
                 
                 timestep_group.create_dataset('fluidDensity', 
                                             data=fluid_densities.astype(np.float32))
                 
-                timestep_group.create_dataset('fluidPressure', 
-                                            data=fluid_pressures.astype(np.float32))
+                timestep_group.create_dataset('fluidGravity', 
+                                            data=np.full((n_fluid_particles, physics['dim']), 
+                                                       [0.0, -physics['gravity']][:physics['dim']], dtype=np.float32))
                 
-                timestep_group.create_dataset('fluidDpdt', 
-                                            data=fluid_dpdt.astype(np.float32))
-                
-                # Constant properties (SFBC optimization)
-                timestep_group.create_dataset('fluidArea', 
-                                            data=np.full(n_fluid_particles, 
-                                                       SFBC_CONSTANTS['fluidArea'], dtype=np.float32))
+                timestep_group.create_dataset('fluidPosition', 
+                                            data=fluid_positions.astype(np.float32))
                 
                 timestep_group.create_dataset('fluidSupport', 
                                             data=np.full(n_fluid_particles, 
                                                        physics['support_radius'], dtype=np.float32))
                 
-                # Empty boundary data (TGV has no boundaries)
-                timestep_group.create_dataset('boundaryDensity', 
-                                            data=np.array([], dtype=np.float32))
+                timestep_group.create_dataset('fluidVelocity', 
+                                            data=fluid_velocities.astype(np.float32))
+                
+                # TGV has no boundary particles - don't create any boundary datasets (matches SFBC_TGV format)
         
         print(f"  Saved {sfbc_data['timesteps']} timesteps")
         print(f"  Physics: {physics['case']} with actual dt={physics['dt']}")
@@ -508,4 +532,4 @@ def main():
         sys.exit(1)
 
 if __name__ == "__main__":
-    main() 
+    main()

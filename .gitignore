@@ -1,10 +1,21 @@
 # Datasets folder - exclude contents but keep structure
-datasets/SFBC/*
-datasets/lagrangebench/*
+data/SFBC/*
+data/lagrangebench/*
+data/wcsph_flows/*
 SFBC/datasets/*
-!datasets/SFBC/.gitkeep
-!datasets/lagrangebench/.gitkeep
+!data/SFBC/.gitkeep
+!data/lagrangebench/.gitkeep
 !SFBC/datasets/.gitkeep
+!data/wcsph_flows/.gitkeep
+
+models/*
+!models/.gitkeep
+
+dataLoader-main
+dataLoader
+diffSPH
+markdown
+
 # Python
 __pycache__/
 *.py[cod]

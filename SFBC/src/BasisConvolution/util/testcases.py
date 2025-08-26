@@ -425,46 +425,138 @@ def loadFrame_testcaseIV(inFile, fileName, key, fileData, fileIndex, fileOffset,
 
 try:
     from diffSPH.v2.parameters import parseDefaultParameters, parseModuleParameters
-    # from torchCompactRadius import radiusSearch
     hasDiffSPH = True
+    print("Using old diffSPH library")
 except ModuleNotFoundError:
-    # from BasisConvolution.neighborhoodFallback.neighborhood import radiusSearch
     hasDiffSPH = False
-    # pass
+    print("diffSPH not available, will use sphMath for config parsing")
 
 # from diffSPH.v2.parameters import parseDefaultParameters, parseModuleParameters
 import copy
 
 def parseSPHConfig(inFile, device, dtype):
-    # if not hasDiffSPH:
-        # raise ModuleNotFoundError('diffSPH is not installed, cannot parse SPH config')
+    if not hasDiffSPH:
+        # Use sphMath to parse actual dataset configuration
+        #print("diffSPH not available, using sphMath for config parsing")
+        
+        # Check if this is LagrangeBench format (config in attributes) or SFBC format (config as HDF5 group)
+        if 'config' in inFile and hasattr(inFile['config'], 'keys'):
+            # SFBC_TGV format: config is HDF5 group with nested structure
+            config = {}
+            for key in inFile['config'].keys():
+                config[key] = {}
+                for subkey in inFile['config'][key].attrs.keys():
+                    config[key][subkey] = inFile['config'][key].attrs[subkey]
+        elif 'config' in inFile.attrs:
+            # LagrangeBench format: config is JSON string in file attributes
+            import json
+            config_str = inFile.attrs['config']
+            if isinstance(config_str, bytes):
+                config_str = config_str.decode('utf-8')
+            config = json.loads(config_str)
+            
+            # Add missing sections that SFBC expects
+            if 'compute' not in config:
+                config['compute'] = {}
+            if 'neighborhood' not in config:
+                config['neighborhood'] = {'scheme': 'compact', 'verletScale': 1.5}
+            if 'boundary' not in config:
+                config['boundary'] = {'active': False}
+            if 'kernel' not in config:
+                config['kernel'] = {
+                    'name': inFile.attrs['defaultKernel'] if 'defaultKernel' in inFile.attrs else 'Wendland2',
+                    'targetNeighbors': float(inFile.attrs['targetNeighbors']) if 'targetNeighbors' in inFile.attrs else 6.6
+                }
+            if 'particle' not in config:
+                config['particle'] = {
+                    'support': float(inFile.attrs['support']) if 'support' in inFile.attrs else 0.029,
+                    'dx': float(inFile.attrs['dx']) if 'dx' in inFile.attrs else 0.02,
+                    'volume': float(inFile.attrs['area']) if 'area' in inFile.attrs else 0.0004
+                }
+            if 'fluid' not in config:
+                config['fluid'] = {
+                    'rho0': float(inFile.attrs['restDensity']) if 'restDensity' in inFile.attrs else 1000,
+                    'cs': float(inFile.attrs['c0']) if 'c0' in inFile.attrs else 100
+                }
+            if 'timestep' not in config:
+                config['timestep'] = {
+                    'dt': float(inFile.attrs['dt']) if 'dt' in inFile.attrs else 0.04
+                }
+        else:
+            raise ValueError('No configuration found in dataset file - neither HDF5 config group nor config attribute')
+        
+        # Convert arrays to proper tensors (not lists) for compatibility with neighborhood search
+        if 'domain' in config:
+            if 'minExtent' in config['domain']:
+                minExtent = config['domain']['minExtent']
+                config['domain']['minExtent'] = torch.tensor(minExtent.tolist() if hasattr(minExtent, 'tolist') else minExtent, device=device, dtype=dtype)
+            if 'maxExtent' in config['domain']:
+                maxExtent = config['domain']['maxExtent']
+                config['domain']['maxExtent'] = torch.tensor(maxExtent.tolist() if hasattr(maxExtent, 'tolist') else maxExtent, device=device, dtype=dtype)
+            if 'periodicity' in config['domain']:
+                periodicity = config['domain']['periodicity']
+                config['domain']['periodicity'] = torch.tensor(periodicity.tolist() if hasattr(periodicity, 'tolist') else periodicity, device=device, dtype=torch.bool)
+            if 'periodic' in config['domain']:
+                config['domain']['periodic'] = bool(config['domain']['periodic'])
+        
+        # Set compute parameters
+        config['compute']['device'] = device
+        config['compute']['dtype'] = dtype
+        
+        # Use existing SFBC getKernel function (compatible interface)
+        if 'kernel' in config and 'name' in config['kernel']:
+            kernel_name = config['kernel']['name']
+            config['kernel']['function'] = getKernel(kernel_name)
+            
+            # Use sphMath to compute support if needed
+            if 'kernelScale' not in config['kernel'] and 'targetNeighbors' in config['kernel']:
+                if 'particle' in config and 'volume' in config['particle']:
+                    try:
+                        import sphMath.sampling as ss
+                        volume = config['particle']['volume']
+                        targetNeighbors = config['kernel']['targetNeighbors']
+                        dim = config['domain']['dim']
+                        support = ss.volumeToSupport(volume, targetNeighbors, dim)
+                        config['particle']['support'] = support
+                        config['kernel']['kernelScale'] = support / (2 * config['particle']['dx']) if 'dx' in config['particle'] else 1.0
+                    except:
+                        print("sphMath not available, will use SFBC getKernel function")
+                        pass
+        else:
+            # Fallback if kernel config is missing
+            config['kernel'] = {
+                'name': 'Wendland2',
+                'targetNeighbors': inFile.attrs['targetNeighbors'] if 'targetNeighbors' in inFile.attrs else 45,
+                'function': getKernel('Wendland2')
+            }
+        
+        return config
+        
+    # Original diffSPH parsing (if available)
     config = {}
     for key in inFile['config'].keys():
         config[key] = {}
         for subkey in inFile['config'][key].attrs.keys():
-            # print(key,subkey)
             config[key][subkey] = inFile['config'][key].attrs[subkey]
-        # print(key, config[key])
 
     if 'domain' in config:
         if 'minExtent' in config['domain']:
-            config['domain']['minExtent'] = config['domain']['minExtent'].tolist()
+            minExtent = config['domain']['minExtent']
+            config['domain']['minExtent'] = torch.tensor(minExtent.tolist() if hasattr(minExtent, 'tolist') else minExtent, device=device, dtype=dtype)
         if 'maxExtent' in config['domain']:
-            # print(config['domain']['maxExtent'])
-            config['domain']['maxExtent'] = config['domain']['maxExtent'].tolist()
+            maxExtent = config['domain']['maxExtent']
+            config['domain']['maxExtent'] = torch.tensor(maxExtent.tolist() if hasattr(maxExtent, 'tolist') else maxExtent, device=device, dtype=dtype)
         if 'periodicity' in config['domain']:
-            config['domain']['periodicity'] = config['domain']['periodicity'].tolist()
+            periodicity = config['domain']['periodicity']
+            config['domain']['periodicity'] = torch.tensor(periodicity.tolist() if hasattr(periodicity, 'tolist') else periodicity, device=device, dtype=torch.bool)
         if 'periodic' in config['domain']:
             config['domain']['periodic'] = bool(config['domain']['periodic'])
     config['compute']['device'] = device
     config['compute']['dtype'] = dtype
     config['simulation']['correctArea'] = False
 
-    if hasDiffSPH:
-        parseDefaultParameters(config)
-        parseModuleParameters(config)
-    else:
-        raise ModuleNotFoundError('diffSPH is not installed, cannot parse SPH config')
+    parseDefaultParameters(config)
+    parseModuleParameters(config)
     
     return config
 
@@ -1161,4 +1253,3 @@ def loadFrame(index, dataset, hyperParameterDict, unrollLength = 8):
         inFile.close()
         raise e
     inFile.close()
-

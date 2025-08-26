@@ -58,26 +58,8 @@ def buildModel(hyperParameterDict, verbose = False):
     #     print(f'vertexMLP: {vertexMLP}')
     #     print(f'fcMLP: {fcMLP}')
     #     print(f'convLayer: {convLayerDict}')
-    model = GraphNetwork(
-        fluidFeatures = fluidFeatureCount, boundaryFeatures = boundaryFeaturecount, dim = hyperParameterDict['dimension'], layers = hyperParameterDict['layers'], activation = hyperParameterDict['activation'],
-        coordinateMapping=coordinateMapping, windowFn = windowFunction, 
-
-        vertexMLP = vertexMLP, #layerMode = 'stack', 
-        edgeMLP = edgeMLP, edgeMode = hyperParameterDict['edgeMode'],
-        
-        outputDecoder = outputDecoder, inputEncoder = inputEncoder, 
-        
-        skipLayerMLP = fcMLP, skipLayerMode = hyperParameterDict['skipLayerMode'], skipConnectionMode = hyperParameterDict['skipConnectionMode'],
-         
-        verbose = verbose,
-
-        inputEdgeEncoder=inputEdgeEncoder, basisEncoder=inputBasisEncoder, normalization=normalization,
-
-        convLayer = convLayerDict, messageMLP = hyperParameterDict['messageMLP'],
-        activationOnNode = hyperParameterDict['activationOnNode'],
-        outputScaling = outputScaling
-    )
-    # model = BasisNetwork(fluidFeatureCount, boundaryFeaturecount, layers = layers, coordinateMapping = coordinateMapping, windowFn = windowFunction, rbfs = rbfs, dims = dims, batchSize = cutlassBatchSize, normalized = normalized, outputBias = outputBias, initializer = initializer, optimizeWeights = optimizeWeights, exponentialDecay = exponentialDecay, inputEncoder = inputEncoder, outputDecoder = outputDecoder, edgeMLP = edgeMLP, vertexMLP = vertexMLP, fcLayerMLP = fcMLP, agglomerateViaMLP = aggloMLP, activation = activation)
+    # Use BasisNetwork for new CConv architecture (default for all training)
+    model = BasisNetwork(fluidFeatureCount, boundaryFeaturecount, layers = layers, coordinateMapping = coordinateMapping, windowFn = windowFunction, rbfs = hyperParameterDict['rbfs'], dims = hyperParameterDict['dims'], batchSize = hyperParameterDict['convLayer']['cutlassBatchSize'], normalized = hyperParameterDict['convLayer']['cutlassNormalization'], outputBias = hyperParameterDict['convLayer']['biasActive'], initializer = hyperParameterDict['convLayer']['initializer'], optimizeWeights = hyperParameterDict['convLayer']['optimizeWeights'], exponentialDecay = hyperParameterDict['convLayer']['exponentialDecay'], inputEncoder = inputEncoder, outputDecoder = outputDecoder, edgeMLP = edgeMLP, vertexMLP = vertexMLP)
 
     model = model.to(hyperParameterDict['device'])
 
