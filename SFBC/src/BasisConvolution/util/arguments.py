@@ -89,6 +89,11 @@ parser.add_argument('--dxdtLossScaling', type = float, default = argparse.SUPPRE
 parser.add_argument('--shiftLoss', type = bool, default = argparse.SUPPRESS, action=argparse.BooleanOptionalAction, help='Shifting the loop')
 parser.add_argument('--skipLastShift', type = bool, default = argparse.SUPPRESS, action=argparse.BooleanOptionalAction, help='Shifting the loop')
 parser.add_argument('--scaleShiftLoss', type = bool, default = argparse.SUPPRESS, action=argparse.BooleanOptionalAction, help='Shifting the loop')
+
+# Hybrid loss arguments
+parser.add_argument('--hybridLoss', type = bool, default = argparse.SUPPRESS, action=argparse.BooleanOptionalAction, help='Enable hybrid MSE + correlation loss [default = False]')
+parser.add_argument('--hybridAlpha', type = float, default = argparse.SUPPRESS, help='Weight for MSE loss in hybrid mode [default = 0.7]')
+parser.add_argument('--hybridBeta', type = float, default = argparse.SUPPRESS, help='Weight for correlation loss in hybrid mode [default = 0.3]')
 parser.add_argument('--integrationScheme', type = str, default = argparse.SUPPRESS, help='Integration scheme')
 
 parser.add_argument('--shiftCFL', type = float, default = argparse.SUPPRESS, help='Integration scheme')

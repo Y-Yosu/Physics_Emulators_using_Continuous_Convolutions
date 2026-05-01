@@ -40,6 +40,11 @@ def defaultHyperParameters():
         # 'outputBias': False,
         'loss': 'mse',
         'batchSize': 1,
+        
+        # Hybrid loss parameters
+        'hybridLoss': False,
+        'hybridAlpha': 0.7,  # Weight for MSE loss
+        'hybridBeta': 0.3,   # Weight for correlation loss
         # 'optimizedWeights': False,
         # 'exponentialDecay': True,
         # 'initializer': 'uniform',
@@ -276,6 +281,11 @@ def parseArguments(args, hyperParameterDict):
     hyperParameterDict['dxdtLossScaling'] = args.dxdtLossScaling if hasattr(args, 'dxdtLossScaling') else hyperParameterDict['dxdtLossScaling']
     hyperParameterDict['scaleShiftLoss'] = args.scaleShiftLoss if hasattr(args, 'scaleShiftLoss') else hyperParameterDict['scaleShiftLoss']
     hyperParameterDict['activation'] = args.activation if hasattr(args, 'activation') else hyperParameterDict['activation']
+    
+    # Hybrid loss parameters
+    hyperParameterDict['hybridLoss'] = args.hybridLoss if hasattr(args, 'hybridLoss') else hyperParameterDict['hybridLoss']
+    hyperParameterDict['hybridAlpha'] = args.hybridAlpha if hasattr(args, 'hybridAlpha') else hyperParameterDict['hybridAlpha']
+    hyperParameterDict['hybridBeta'] = args.hybridBeta if hasattr(args, 'hybridBeta') else hyperParameterDict['hybridBeta']
     hyperParameterDict['exportPath'] = args.exportPath if hasattr(args, 'exportPath') else hyperParameterDict['exportPath']
     hyperParameterDict['integrationScheme'] = args.integrationScheme if hasattr(args, 'integrationScheme') else hyperParameterDict['integrationScheme']
     hyperParameterDict['shiftCFL'] = args.shiftCFL if hasattr(args, 'shiftCFL') else hyperParameterDict['shiftCFL'] 
@@ -853,7 +863,10 @@ def finalizeHyperParameters(hyperParameterDict, dataset):
 
     lossTerm = 'b' if hyperParameterDict['lossTerms'] == 'both' else 'x' if hyperParameterDict['lossTerms'] == 'position' else 'u' if hyperParameterDict['lossTerms'] == 'velocity' else '?'
 
-    lossText = f'[{"S" if hyperParameterDict["shiftLoss"] else " "}{lossTerm}{int(hyperParameterDict["dxdtLossScaling"])}{"i" if hyperParameterDict["independent_dxdt"] else " "}]'
+    # Add hybrid loss indicator
+    hybridText = f'H({hyperParameterDict["hybridAlpha"]:.1f},{hyperParameterDict["hybridBeta"]:.1f})' if hyperParameterDict.get("hybridLoss", False) else ""
+    
+    lossText = f'[{"S" if hyperParameterDict["shiftLoss"] else " "}{lossTerm}{int(hyperParameterDict["dxdtLossScaling"])}{"i" if hyperParameterDict["independent_dxdt"] else " "}{hybridText}]'
 
     progressLabel = modeText + encoderText + mlpText + layerString + mappingString + normString + f'[{hyperParameterDict["networkType"]}]' + noiseText + lossText
 
